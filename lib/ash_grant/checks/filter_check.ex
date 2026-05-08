@@ -49,8 +49,8 @@ defmodule AshGrant.FilterCheck do
      the actor's permissions
   2. **Get all scopes**: Uses `AshGrant.Evaluator.get_all_scopes/3` to find
      all matching scopes (respecting deny-wins semantics)
-  3. **Check for global access**: If scopes include "always", "all", or "global",
-     returns `true` (no filter needed)
+  3. **Check for unrestricted access**: If any matching permission was declared
+     without a scope (`nil` scope), returns `true` (no filter needed)
   4. **Resolve scopes to filters**: Uses inline scope DSL or `ScopeResolver`
      to get filter expressions
   5. **Combine filters**: Combines all filters with OR logic
@@ -71,7 +71,7 @@ defmodule AshGrant.FilterCheck do
 
   ### Basic Usage
 
-      # Permission: "post:*:read:always"
+      # Permission: "post:*:read:" (no scope — empty trailing segment)
       # Returns: true (no filter)
 
       # Permission: "post:*:read:own"
@@ -91,7 +91,7 @@ defmodule AshGrant.FilterCheck do
 
   The check returns one of:
 
-  - `true` - No filtering (actor has "always", "all", or "global" scope)
+  - `true` - No filtering (actor has a permission declared without a scope)
   - `false` - Block all (no matching permissions or denied)
   - `Ash.Expr.t()` - Filter expression to apply to the query
 
@@ -417,9 +417,6 @@ defmodule AshGrant.FilterCheck do
       # String.to_existing_atom failed, try legacy resolver
       resolve_with_scope_resolver(scope_resolver, scope, context)
   end
-
-  defp resolve_with_scope_resolver(nil, "always", _context), do: true
-  defp resolve_with_scope_resolver(nil, "all", _context), do: true
 
   defp resolve_with_scope_resolver(nil, scope, _context) do
     raise """

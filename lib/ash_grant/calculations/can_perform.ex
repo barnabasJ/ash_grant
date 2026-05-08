@@ -285,9 +285,6 @@ defmodule AshGrant.Calculation.CanPerform do
       resolve_with_scope_resolver(scope_resolver, scope)
   end
 
-  defp resolve_with_scope_resolver(nil, "always"), do: true
-  defp resolve_with_scope_resolver(nil, "all"), do: true
-
   defp resolve_with_scope_resolver(nil, scope) do
     raise """
     AshGrant.Calculation.CanPerform: Scope "#{scope}" not found in inline scope DSL \
