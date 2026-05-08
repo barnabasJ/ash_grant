@@ -252,6 +252,27 @@ defmodule AshGrant.Dsl do
   """
   def scope_entity, do: @scope
 
+  @doc false
+  # Schema validator for the `permission`'s `instance:` keyword when given
+  # as a string. The value flows into the colon-separated permission grammar
+  # (`resource:instance:action:scope`), so a literal `:` would silently
+  # corrupt the parse. Reject it at compile time with a clear error.
+  @spec validate_instance_string(term()) :: {:ok, String.t()} | {:error, String.t()}
+  def validate_instance_string(value) when is_binary(value) do
+    if String.contains?(value, ":") do
+      {:error,
+       "instance id #{inspect(value)} contains `:`, which is reserved as the " <>
+         "permission-string segment separator. Use a slug, UUID, or any other " <>
+         "identifier without `:`."}
+    else
+      {:ok, value}
+    end
+  end
+
+  def validate_instance_string(value) do
+    {:error, "expected a string, got: #{inspect(value)}"}
+  end
+
   @field_group %Spark.Dsl.Entity{
     name: :field_group,
     describe: """
@@ -516,11 +537,12 @@ defmodule AshGrant.Dsl do
         doc: "Stable identifier for this permission within its grant."
       ],
       instance: [
-        type: {:or, [{:in, [:*]}, :atom, :string]},
+        type: {:or, [{:in, [:*]}, :atom, {:custom, AshGrant.Dsl, :validate_instance_string, []}]},
         default: :*,
         doc:
           "Instance id this permission targets. Defaults to `:*` (RBAC). " <>
-            "Hardcoded instance ids are rare; dynamic instance permissions should use a resolver function."
+            "Hardcoded instance ids are rare; dynamic instance permissions should use a resolver function. " <>
+            "String values must not contain `:` (the permission-string separator)."
       ],
       action: [
         type: :atom,

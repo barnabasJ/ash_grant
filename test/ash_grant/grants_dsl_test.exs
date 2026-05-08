@@ -279,5 +279,36 @@ defmodule AshGrant.GrantsDslTest do
       # Actor matching neither: empty.
       assert [] = AshGrant.GrantsResolver.resolve(%{role: :nobody}, %{resource: DualPost})
     end
+
+    test "rejects a literal `instance:` string containing `:`" do
+      assert_raise Spark.Error.DslError, ~r/contains `:`/, fn ->
+        defmodule BadInstancePost do
+          use Ash.Resource,
+            domain: nil,
+            validate_domain_inclusion?: false,
+            extensions: [AshGrant]
+
+          ash_grant do
+            resource_name("bad_instance_post")
+
+            scope(:always, true)
+
+            grants do
+              grant :owner, expr(^actor(:role) == :owner) do
+                permission(:manage, :update, :always, instance: "doc:abc:nope")
+              end
+            end
+          end
+
+          actions do
+            defaults([:read, :create, :update, :destroy])
+          end
+
+          attributes do
+            uuid_primary_key(:id)
+          end
+        end
+      end
+    end
   end
 end

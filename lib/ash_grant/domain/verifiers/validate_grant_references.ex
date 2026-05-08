@@ -16,10 +16,12 @@ defmodule AshGrant.Domain.Verifiers.ValidateGrantReferences do
     on the resource itself or inherited from this domain. The merged
     list comes from `AshGrant.Info.scopes/1`.
 
-  Resources that aren't loaded yet at verifier time (typical in the
-  domain↔resource compile dance) are skipped silently rather than
-  raising; the resource-level verifier will catch genuinely-broken
-  references when each resource compiles.
+  By the time this verifier runs, every resource declared in the
+  domain's `resources do` block is already compiled (Spark's
+  `{:spark, Ash.Resource}` type for the `resource` entity establishes
+  the compile-time dependency). We trust that invariant and read each
+  resource's actions/scopes directly — no fallback for unloaded
+  modules.
   """
 
   use Spark.Dsl.Verifier
@@ -49,20 +51,6 @@ defmodule AshGrant.Domain.Verifiers.ValidateGrantReferences do
   defp domain_resources(dsl_state) do
     Verifier.get_entities(dsl_state, [:resources])
     |> Enum.map(& &1.resource)
-    |> Enum.filter(&loadable_resource?/1)
-  end
-
-  defp loadable_resource?(module) when is_atom(module) do
-    cond do
-      Code.ensure_loaded?(module) ->
-        Ash.Resource.Info.resource?(module)
-
-      match?({:module, _}, Code.ensure_compiled(module)) ->
-        Ash.Resource.Info.resource?(module)
-
-      true ->
-        false
-    end
   end
 
   defp validate_permission(permission, grant, domain, resources) do
