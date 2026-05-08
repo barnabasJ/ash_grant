@@ -95,9 +95,8 @@ defmodule AshGrant.GrantsDslTest do
       assert :create_pro in names
     end
 
-    test "permission `on:` defaults to current resource" do
+    test "permission introspection returns the parsed fields" do
       read_all = Info.permissions(Post) |> Enum.find(&(&1.name == :read_all))
-      assert read_all.on == Post
       assert read_all.instance == :*
       assert read_all.action == :read
       assert read_all.scope == :always

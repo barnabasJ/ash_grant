@@ -69,7 +69,6 @@ defmodule AshGrant.OptionalScopeTest do
 
       assert permission.scope == nil
       assert permission.action == :*
-      assert permission.on == Post
     end
 
     test "resolver emits a 4-part string with an empty trailing segment" do
@@ -104,9 +103,9 @@ defmodule AshGrant.OptionalScopeTest do
   end
 
   # Inline domain with a no-scope **broadcast** permission. Domain-level
-  # permissions default to broadcast (`on: nil`) — they apply to every
-  # resource in the domain, with the resolver substituting the resource
-  # being authorized at runtime.
+  # permissions are broadcasts — they apply to every resource in the
+  # domain, with the resolver substituting the resource being authorized
+  # at runtime.
   defmodule BareDomain do
     use Ash.Domain,
       extensions: [AshGrant.Domain],
@@ -125,12 +124,11 @@ defmodule AshGrant.OptionalScopeTest do
   end
 
   describe "domain-level permission with no scope" do
-    test "parses to a Permission struct with scope: nil and broadcast on: nil" do
+    test "parses to a Permission struct with scope: nil" do
       [grant] = AshGrant.Domain.Info.grants(BareDomain)
       [permission] = grant.permissions
 
       assert permission.name == :manage_everything
-      assert permission.on == nil
       assert permission.action == :*
       assert permission.scope == nil
     end
@@ -145,7 +143,6 @@ defmodule AshGrant.OptionalScopeTest do
 
       # stringify nil -> "" (see AshGrant.GrantsResolver.stringify/1)
       assert perm.scope == nil
-      assert perm.on == nil
 
       # Sanity: Post has its own admin grant emitting "post:*:*:"
       perms = AshGrant.GrantsResolver.resolve(%{role: :admin}, %{resource: Post})

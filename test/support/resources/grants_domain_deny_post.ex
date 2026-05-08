@@ -1,10 +1,10 @@
-defmodule AshGrant.Test.GrantsDomainOther do
+defmodule AshGrant.Test.GrantsDomainDenyPost do
   @moduledoc """
-  Secondary resource in `AshGrant.Test.GrantsOnlyDomain`. Lets us prove
-  that a single domain-level grant covers multiple resources at once
-  (broadcast): the resolver substitutes whichever resource is being
-  authorized, so the same domain permission lights up `GrantsDomainPost`
-  and this resource alike.
+  Sits in `AshGrant.Test.GrantsOnlyDomain`, which broadcasts an admin
+  allow for every action on every resource (`:admin → :*:*:always`).
+  This resource adds a *resource-level deny* on `:destroy` for the same
+  admin actor — exercising deny-wins across the domain/resource
+  boundary: domain allow + resource deny → deny wins.
   """
   use Ash.Resource,
     domain: AshGrant.Test.GrantsOnlyDomain,
@@ -13,8 +13,15 @@ defmodule AshGrant.Test.GrantsDomainOther do
     extensions: [AshGrant]
 
   ash_grant do
-    resource_name("grants_domain_other")
+    resource_name("grants_domain_deny_post")
     default_policies(true)
+
+    grants do
+      grant :admin_no_destroy, expr(^actor(:role) == :admin) do
+        description("Resource-level deny: admins cannot destroy on this resource")
+        permission(:no_destroy, :destroy, deny: true)
+      end
+    end
   end
 
   attributes do

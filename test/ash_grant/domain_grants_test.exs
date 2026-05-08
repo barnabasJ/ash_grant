@@ -3,21 +3,23 @@ defmodule AshGrant.DomainGrantsTest do
   Covers the declarative `grants` DSL when declared on an `Ash.Domain`
   instead of (or in addition to) a resource.
 
-  Domain-level grants apply to **every** resource in the domain by
-  default — `permission :name, :action, :scope` is a *broadcast*. The
-  resolver substitutes `context.resource` at runtime so the same
-  permission lights up every resource in the domain. Use the `on:`
-  keyword to scope a single permission to one resource (Ash's
-  `policy resource_is/1` analog).
+  Domain-level grants apply to **every** resource in the domain —
+  `permission :name, :action, :scope` is a *broadcast*. The resolver
+  substitutes `context.resource` at runtime so the same permission
+  lights up every resource in the domain. To narrow a permission to
+  one specific resource, declare it on that resource's `grants` block
+  — there is no per-permission target keyword.
   """
 
   use ExUnit.Case, async: false
 
+  require Ash.Query
   import ExUnit.CaptureIO
 
   alias AshGrant.Info
 
   alias AshGrant.Test.{
+    GrantsDomainDenyPost,
     GrantsDomainMixedPost,
     GrantsDomainOther,
     GrantsDomainOverridePost,
@@ -43,6 +45,7 @@ defmodule AshGrant.DomainGrantsTest do
     clear_ets!(GrantsDomainMixedPost)
     clear_ets!(GrantsDomainOverridePost)
     clear_ets!(GrantsDomainOther)
+    clear_ets!(GrantsDomainDenyPost)
     :ok
   end
 
@@ -58,12 +61,11 @@ defmodule AshGrant.DomainGrantsTest do
       assert names == [:manage_all, :read_published]
     end
 
-    test "every domain-level permission parses as a broadcast (on: nil)" do
+    test "domain-level permissions parse with their action and scope" do
       [%{permissions: [perm | _]}] =
         AshGrant.Domain.Info.grants(GrantsOnlyDomain)
         |> Enum.filter(&(&1.name == :admin))
 
-      assert perm.on == nil
       assert perm.action == :*
       assert perm.scope == :always
     end
@@ -218,6 +220,64 @@ defmodule AshGrant.DomainGrantsTest do
 
       assert "grants_domain_resolver_post:*:*:always" in perms
     end
+
+    test "single actor matching both a grant AND the resolver — outputs concatenate" do
+      # `:admin` matches the domain's broadcast grant AND triggers the
+      # resource's custom resolver. Both contributions must end up in the
+      # final permission list (deny-wins still applies in `Evaluator`).
+      perms =
+        AshGrant.GrantsResolver.resolve(admin(), %{resource: GrantsDomainResolverPost})
+
+      # From the domain's :admin grant
+      assert "grants_domain_resolver_post:*:*:always" in perms
+      # From the resource's resolver
+      assert "grants_domain_resolver_post:*:audit:always" in perms
+    end
+  end
+
+  describe "deny across the domain/resource boundary" do
+    test "resolver emits both the domain allow and the resource deny" do
+      perms = AshGrant.GrantsResolver.resolve(admin(), %{resource: GrantsDomainDenyPost})
+
+      # Domain :admin grant — broadcast allow on every action
+      assert "grants_domain_deny_post:*:*:always" in perms
+      # Resource :admin_no_destroy grant — wholesale deny on :destroy
+      assert "!grants_domain_deny_post:*:destroy:" in perms
+    end
+
+    test "deny wins when admin tries to destroy a row" do
+      {:ok, row} =
+        GrantsDomainDenyPost
+        |> Ash.Changeset.for_create(
+          :create,
+          %{title: "p", author_id: Ash.UUID.generate(), status: :published},
+          authorize?: false
+        )
+        |> Ash.create(authorize?: false)
+
+      assert_raise Ash.Error.Forbidden, fn ->
+        Ash.destroy!(row, actor: admin())
+      end
+    end
+
+    test "non-destroy actions still allowed — the deny only targets :destroy" do
+      {:ok, row} =
+        GrantsDomainDenyPost
+        |> Ash.Changeset.for_create(
+          :create,
+          %{title: "r", author_id: Ash.UUID.generate(), status: :draft},
+          authorize?: false
+        )
+        |> Ash.create(authorize?: false)
+
+      target_id = row.id
+
+      assert [_] =
+               GrantsDomainDenyPost
+               |> Ash.Query.for_read(:read)
+               |> Ash.Query.filter(id == ^target_id)
+               |> Ash.read!(actor: admin())
+    end
   end
 
   describe "compile-time verification" do
@@ -272,7 +332,6 @@ defmodule AshGrant.DomainGrantsTest do
 
       [grant] = AshGrant.Domain.Info.grants(BroadcastDomain)
       assert length(grant.permissions) == 2
-      assert Enum.all?(grant.permissions, &(&1.on == nil))
     end
 
     test "warns at compile time when a broadcast scope is missing on a resource" do

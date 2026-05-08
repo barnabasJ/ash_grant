@@ -36,5 +36,6 @@ defmodule AshGrant.Test.GrantsOnlyDomain do
     resource(AshGrant.Test.GrantsDomainOverridePost)
     resource(AshGrant.Test.GrantsDomainOther)
     resource(AshGrant.Test.GrantsDomainResolverPost)
+    resource(AshGrant.Test.GrantsDomainDenyPost)
   end
 end

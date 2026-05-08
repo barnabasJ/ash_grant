@@ -331,8 +331,8 @@ defmodule AshGrant.Evaluator do
   Returns a list of scopes from all matching allow permissions. A matching
   permission that was declared without a scope contributes `nil` to the
   list — downstream consumers (`FilterCheck`, `CanPerform`) treat `nil`
-  as "no row filter" / unrestricted access, equivalent to the explicit
-  `"always"` / `"all"` / `"global"` scopes.
+  as "no row filter" / unrestricted access. Named scopes (including
+  `:always`) take the regular scope-resolver path.
 
   Useful when a user has multiple roles with different scopes.
 

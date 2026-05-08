@@ -131,13 +131,13 @@ defmodule AshGrant.GrantsResolver do
       false
   end
 
-  # `permission.on == nil` means a domain-level broadcast: the permission
-  # was declared without a target so it applies to every resource in the
-  # domain. At runtime we substitute the resource currently being checked
-  # (the one passed to `resolve/2` via `context.resource`).
+  # The permission's target is always the resource currently being checked.
+  # For resource-level grants that's the enclosing resource (the only one
+  # the resource emits permissions for); for domain-level grants it's every
+  # resource in the domain in turn (broadcast). Either way, `context.resource`
+  # is the single source of truth.
   defp to_permission_string(%AshGrant.Dsl.Permission{} = permission, current_resource) do
-    target = permission.on || current_resource
-    resource_name = AshGrant.Info.resource_name(target)
+    resource_name = AshGrant.Info.resource_name(current_resource)
     prefix = if permission.deny, do: "!", else: ""
 
     prefix <>

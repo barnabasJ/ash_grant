@@ -1,9 +1,10 @@
 defmodule AshGrant.Test.GrantsDomainResolverPost do
   @moduledoc """
-  Sits in a domain that has `grants` declared but defines its **own**
-  explicit `resolver`. The resource's resolver fully overrides the domain
-  resolver, so the domain's grants should **not** run for this resource.
-  Pins the documented interaction so the shadowing stays intentional.
+  Sits in a domain that has `grants` declared and *also* defines its own
+  explicit `resolver`. Both contribute additively: domain grants apply to
+  every resource in the domain (broadcasts), and the resource's resolver
+  runs on top of that. The combined permission list flows through the
+  same `Evaluator` — deny-wins still holds across both sources.
   """
   use Ash.Resource,
     domain: AshGrant.Test.GrantsOnlyDomain,
@@ -18,6 +19,10 @@ defmodule AshGrant.Test.GrantsDomainResolverPost do
     resolver(fn actor, _context ->
       case actor do
         %{role: :custom_resolver_actor} -> ["grants_domain_resolver_post:*:*:always"]
+        # An :admin actor also matches the domain's :admin broadcast, so this
+        # row exercises the additive merge: domain grant + resource resolver
+        # both contribute permissions for the same actor.
+        %{role: :admin} -> ["grants_domain_resolver_post:*:audit:always"]
         _ -> []
       end
     end)

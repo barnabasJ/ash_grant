@@ -964,17 +964,17 @@ defmodule AshGrant.Dsl.Permission do
   Represents a single permission nested inside a `grant` in the AshGrant DSL.
 
   Permissions are structured, compile-time-verified equivalents of permission
-  strings (`resource:instance:action:scope`). The verifier ensures that
-  `on` is a real `Ash.Resource`, `action` exists on that resource, and
-  `scope` is defined on that resource.
+  strings (`resource:instance:action:scope`). The target resource is
+  determined by where the enclosing `grant` lives — there is no per-permission
+  target field. Resource-level grants apply to the enclosing resource;
+  domain-level grants broadcast to every resource in the domain.
 
   ## Fields
 
   - `:name` — stable identifier for this permission within its grant
-  - `:on` — the resource module this permission applies to
   - `:instance` — instance id to match, or `:*` for RBAC (default `:*`)
   - `:action` — action name on the resource (or `:*`)
-  - `:scope` — scope name defined on the resource
+  - `:scope` — scope name defined on the resource (optional; `nil` = unrestricted)
   - `:deny` — when `true`, the permission is a deny rule (deny wins)
   - `:description` — human-readable description for docs/audits
 
@@ -998,7 +998,6 @@ defmodule AshGrant.Dsl.Permission do
 
   defstruct [
     :name,
-    :on,
     :instance,
     :action,
     :scope,
@@ -1009,10 +1008,9 @@ defmodule AshGrant.Dsl.Permission do
 
   @type t :: %__MODULE__{
           name: atom(),
-          on: module() | nil,
           instance: atom() | String.t() | nil,
           action: atom(),
-          scope: atom(),
+          scope: atom() | nil,
           deny: boolean() | nil,
           description: String.t() | nil,
           __spark_metadata__: map() | nil

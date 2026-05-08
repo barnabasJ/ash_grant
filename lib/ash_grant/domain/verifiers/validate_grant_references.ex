@@ -24,6 +24,7 @@ defmodule AshGrant.Domain.Verifiers.ValidateGrantReferences do
 
   use Spark.Dsl.Verifier
 
+  alias AshGrant.Verifiers.GrantTraversal
   alias Spark.Dsl.Verifier
   alias Spark.Error.DslError
 
@@ -38,7 +39,10 @@ defmodule AshGrant.Domain.Verifiers.ValidateGrantReferences do
 
       _ ->
         resources = domain_resources(dsl_state)
-        validate_grants(grants, domain, resources)
+
+        GrantTraversal.each_permission(grants, fn permission, grant ->
+          validate_permission(permission, grant, domain, resources)
+        end)
     end
   end
 
@@ -59,24 +63,6 @@ defmodule AshGrant.Domain.Verifiers.ValidateGrantReferences do
       true ->
         false
     end
-  end
-
-  defp validate_grants(grants, domain, resources) do
-    Enum.reduce_while(grants, :ok, fn grant, :ok ->
-      case validate_grant(grant, domain, resources) do
-        :ok -> {:cont, :ok}
-        err -> {:halt, err}
-      end
-    end)
-  end
-
-  defp validate_grant(grant, domain, resources) do
-    Enum.reduce_while(grant.permissions || [], :ok, fn permission, :ok ->
-      case validate_permission(permission, grant, domain, resources) do
-        :ok -> {:cont, :ok}
-        err -> {:halt, err}
-      end
-    end)
   end
 
   defp validate_permission(permission, grant, domain, resources) do
