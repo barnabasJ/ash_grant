@@ -1,4 +1,4 @@
-defmodule AshGrant.Verifiers.ValidateGrantReferences do
+defmodule AshGrant.Resource.Verifiers.ValidateGrantReferences do
   @moduledoc """
   Verifies that every `permission` in a resource's `grants` block refers to a
   real resource, action, and scope.

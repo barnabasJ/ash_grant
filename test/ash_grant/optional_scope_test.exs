@@ -8,7 +8,7 @@ defmodule AshGrant.OptionalScopeTest do
   1. Both the resource-level and domain-level `permission` entities parse
      the 2-arg (resource) / 3-arg (domain) form and produce a
      `%AshGrant.Dsl.Permission{scope: nil}`.
-  2. `AshGrant.Verifiers.ValidateGrantReferences` doesn't complain about a
+  2. `AshGrant.Resource.Verifiers.ValidateGrantReferences` doesn't complain about a
      missing scope — even when the target resource declares no scopes.
   3. `AshGrant.GrantsResolver.to_permission_string/1` emits the no-scope
      form as a 4-part string with an empty trailing segment

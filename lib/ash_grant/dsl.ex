@@ -498,7 +498,7 @@ defmodule AshGrant.Dsl do
 
     ## Compile-time verification
 
-    `AshGrant.Verifiers.ValidateGrantReferences` checks that `action`
+    `AshGrant.Resource.Verifiers.ValidateGrantReferences` checks that `action`
     exists on the target resource (or is `:*`) and — when a scope is given
     — that the scope is defined on the resource (or inherited from its
     domain). A domain-level broadcast skips these checks because the

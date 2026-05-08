@@ -1,4 +1,4 @@
-defmodule AshGrant.Verifiers.ValidateResolverPresent do
+defmodule AshGrant.Resource.Verifiers.ValidateResolverPresent do
   @moduledoc """
   Spark DSL verifier that warns at compile time when neither the resource nor
   its domain defines a resolver.

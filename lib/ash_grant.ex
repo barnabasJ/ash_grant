@@ -320,9 +320,9 @@ defmodule AshGrant do
       AshGrant.Transformers.AddCanPerformCalculations
     ],
     verifiers: [
-      AshGrant.Verifiers.ValidateResolverPresent,
-      AshGrant.Verifiers.ValidateScopes,
-      AshGrant.Verifiers.ValidateGrantReferences
+      AshGrant.Resource.Verifiers.ValidateResolverPresent,
+      AshGrant.Resource.Verifiers.ValidateScopes,
+      AshGrant.Resource.Verifiers.ValidateGrantReferences
     ]
 
   @doc """

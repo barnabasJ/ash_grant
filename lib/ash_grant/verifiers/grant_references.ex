@@ -1,7 +1,7 @@
 defmodule AshGrant.Verifiers.GrantReferences do
   @moduledoc false
   # Resource-level reference validation for grants. Called by
-  # `AshGrant.Verifiers.ValidateGrantReferences`. Domain-level grants
+  # `AshGrant.Resource.Verifiers.ValidateGrantReferences`. Domain-level grants
   # (broadcasts) are validated separately in
   # `AshGrant.Domain.Verifiers.ValidateGrantReferences`, which has access
   # to the full list of resources in the domain.

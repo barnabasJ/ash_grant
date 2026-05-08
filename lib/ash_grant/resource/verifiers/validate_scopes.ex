@@ -1,4 +1,4 @@
-defmodule AshGrant.Verifiers.ValidateScopes do
+defmodule AshGrant.Resource.Verifiers.ValidateScopes do
   @moduledoc """
   Spark DSL verifier that validates scope-adjacent configuration:
 

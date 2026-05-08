@@ -28,12 +28,15 @@ defmodule AshGrant.GrantsResolver do
 
   ## Error handling
 
-  Expression evaluation is wrapped in a `rescue` because a malformed
-  predicate must never crash authorization. Any error is logged at
-  `:warning` with the resource, grant name, and error — the grant is then
-  treated as non-matching (fail closed). The same applies to a raising
-  user resolver: the error is logged and an empty list is substituted for
-  that resolver's contribution so grants alone continue to work.
+  Predicate evaluation is wrapped in a `rescue` because predicates run
+  user expressions over actor/tenant/context data — a nil shape from
+  upstream shouldn't crash authorization mid-request. Any error is
+  logged at `:warning` and the grant is treated as non-matching (fail
+  closed).
+
+  A user-declared resolver, by contrast, is plain Elixir code under the
+  caller's control. We don't rescue it: a bug surfaces as a crash with a
+  real stacktrace rather than a silent deny + log line.
   """
 
   require Logger
@@ -75,33 +78,13 @@ defmodule AshGrant.GrantsResolver do
     end
   end
 
-  defp call_resolver(mod, actor, resource, context) when is_atom(mod) do
+  defp call_resolver(mod, actor, _resource, context) when is_atom(mod) do
     mod.resolve(actor, context)
-  rescue
-    error ->
-      Logger.warning(
-        "AshGrant.GrantsResolver: resolver #{inspect(mod)} for " <>
-          "#{inspect(resource)} raised — treating as empty. " <>
-          "Error: #{Exception.message(error)}"
-      )
-
-      []
   end
 
-  defp call_resolver(fun, actor, resource, context) when is_function(fun, 2) do
+  defp call_resolver(fun, actor, _resource, context) when is_function(fun, 2) do
     fun.(actor, context)
-  rescue
-    error ->
-      Logger.warning(
-        "AshGrant.GrantsResolver: resolver function for " <>
-          "#{inspect(resource)} raised — treating as empty. " <>
-          "Error: #{Exception.message(error)}"
-      )
-
-      []
   end
-
-  defp call_resolver(_other, _actor, _resource, _context), do: []
 
   defp predicate_true?(%{predicate: true}, _actor, _resource, _tenant, _context), do: true
   defp predicate_true?(%{predicate: false}, _actor, _resource, _tenant, _context), do: false
@@ -157,5 +140,4 @@ defmodule AshGrant.GrantsResolver do
   defp stringify(:*), do: "*"
   defp stringify(value) when is_atom(value), do: Atom.to_string(value)
   defp stringify(value) when is_binary(value), do: value
-  defp stringify(value), do: to_string(value)
 end

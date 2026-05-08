@@ -63,14 +63,7 @@ defmodule AshGrant.Info do
     end
   end
 
-  @doc """
-  Returns the user-declared resolver (resource first, domain fallback),
-  bypassing the `GrantsResolver` synthesis.
-
-  Internal to `AshGrant.GrantsResolver` — callers outside the extension
-  should use `resolver/1` instead. Exposed publicly so the synthesized
-  resolver can reach it without importing private functions.
-  """
+  @doc false
   @spec raw_resolver(resource :: Ash.Resource.t()) :: module() | function() | nil
   def raw_resolver(resource) do
     case Spark.Dsl.Extension.get_opt(resource, [:ash_grant], :resolver) do

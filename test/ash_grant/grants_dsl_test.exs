@@ -280,6 +280,42 @@ defmodule AshGrant.GrantsDslTest do
       assert [] = AshGrant.GrantsResolver.resolve(%{role: :nobody}, %{resource: DualPost})
     end
 
+    test "a raising user resolver propagates — no silent rescue" do
+      # Predicates are rescued (they evaluate user expressions over actor /
+      # tenant data and a nil shape shouldn't crash authorization). A user
+      # resolver, by contrast, is plain Elixir under the caller's control —
+      # bugs surface as crashes with real stacktraces.
+      defmodule RaisingResolverPost do
+        use Ash.Resource,
+          domain: nil,
+          validate_domain_inclusion?: false,
+          extensions: [AshGrant]
+
+        ash_grant do
+          resource_name("raising_resolver_post")
+          resolver(fn _actor, _context -> raise "resolver bug" end)
+
+          grants do
+            grant :admin, expr(^actor(:role) == :admin) do
+              permission(:manage_all, :*)
+            end
+          end
+        end
+
+        actions do
+          defaults([:read])
+        end
+
+        attributes do
+          uuid_primary_key(:id)
+        end
+      end
+
+      assert_raise RuntimeError, "resolver bug", fn ->
+        AshGrant.GrantsResolver.resolve(%{role: :admin}, %{resource: RaisingResolverPost})
+      end
+    end
+
     test "rejects a literal `instance:` string containing `:`" do
       assert_raise Spark.Error.DslError, ~r/contains `:`/, fn ->
         defmodule BadInstancePost do
