@@ -58,6 +58,48 @@ defmodule AshGrant.GrantsDslTest do
     end
   end
 
+  # A dynamic/DB-style resolver that always grants a baseline read — stands in
+  # for an app's PermissionResolver.
+  defmodule BaseResolver do
+    @moduledoc false
+    @behaviour AshGrant.PermissionResolver
+
+    @impl true
+    def resolve(nil, _context), do: []
+    def resolve(_actor, _context), do: ["post:*:read:always"]
+  end
+
+  # A resource that declares BOTH an explicit `resolver` and `grants` — the
+  # synthesized GrantsResolver must union the grant-derived strings with the
+  # base resolver's strings (composition).
+  defmodule ComposedPost do
+    use Ash.Resource,
+      domain: nil,
+      validate_domain_inclusion?: false,
+      extensions: [AshGrant]
+
+    ash_grant do
+      resource_name("post")
+      resolver(AshGrant.GrantsDslTest.BaseResolver)
+
+      scope(:always, true)
+
+      grants do
+        grant :admin, expr(^actor(:role) == :admin) do
+          permission(:manage_all, :*, :always)
+        end
+      end
+    end
+
+    actions do
+      defaults([:read, :create, :update, :destroy])
+    end
+
+    attributes do
+      uuid_primary_key(:id)
+    end
+  end
+
   describe "grants DSL parsing" do
     test "returns all declared grants" do
       grants = Info.grants(Post)
@@ -223,34 +265,76 @@ defmodule AshGrant.GrantsDslTest do
       end
     end
 
-    test "rejects declaring both grants and explicit resolver" do
-      assert_raise Spark.Error.DslError, ~r/both `grants` and `resolver`/s, fn ->
-        defmodule DualResolverPost do
-          use Ash.Resource,
-            domain: nil,
-            validate_domain_inclusion?: false,
-            extensions: [AshGrant]
+    test "allows declaring both grants and an explicit (function) resolver — they compose" do
+      defmodule DualResolverPost do
+        use Ash.Resource,
+          domain: nil,
+          validate_domain_inclusion?: false,
+          extensions: [AshGrant]
 
-          actions do
-            defaults([:read])
-          end
+        actions do
+          defaults([:read])
+        end
 
-          ash_grant do
-            resolver(fn _actor, _context -> [] end)
-            scope(:always, true)
+        ash_grant do
+          resource_name("post")
 
-            grants do
-              grant :noop, expr(^actor(:role) == :admin) do
-                permission(:read_all, :read, :always)
-              end
+          resolver(fn
+            nil, _context -> []
+            _actor, _context -> ["post:*:read:always"]
+          end)
+
+          scope(:always, true)
+
+          grants do
+            grant :admin, expr(^actor(:role) == :admin) do
+              permission(:manage_all, :*, :always)
             end
           end
+        end
 
-          attributes do
-            uuid_primary_key(:id)
-          end
+        attributes do
+          uuid_primary_key(:id)
         end
       end
+
+      context = %{resource: DualResolverPost}
+      perms = AshGrant.GrantsResolver.resolve(%{role: :admin}, context)
+
+      assert "post:*:*:always" in perms, "expected the grant-derived permission"
+      assert "post:*:read:always" in perms, "expected the function base resolver's permission"
+    end
+  end
+
+  describe "composition: grants + explicit resolver" do
+    setup do
+      %{context: %{resource: ComposedPost}}
+    end
+
+    test "still wires GrantsResolver as the resource resolver" do
+      assert Info.resolver(ComposedPost) == AshGrant.GrantsResolver
+    end
+
+    test "unions grant-derived and base-resolver permissions for a matching actor",
+         %{context: context} do
+      perms = AshGrant.GrantsResolver.resolve(%{role: :admin}, context)
+
+      # from the grant (admin → manage_all = :*)
+      assert "post:*:*:always" in perms
+      # from the explicit base resolver
+      assert "post:*:read:always" in perms
+    end
+
+    test "still emits the base-resolver permissions when no grant matches",
+         %{context: context} do
+      perms = AshGrant.GrantsResolver.resolve(%{role: :viewer}, context)
+
+      assert "post:*:read:always" in perms
+      refute "post:*:*:always" in perms
+    end
+
+    test "a nil actor yields nothing from grants or base resolver", %{context: context} do
+      assert AshGrant.GrantsResolver.resolve(nil, context) == []
     end
   end
 end

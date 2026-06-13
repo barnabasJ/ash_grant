@@ -44,15 +44,32 @@ defmodule AshGrant.GrantsResolver do
     tenant = Map.get(context, :tenant)
     inner_context = Map.get(context, :context) || %{}
 
-    resource
-    |> AshGrant.Info.grants()
-    |> Enum.flat_map(fn grant ->
-      if predicate_true?(grant, actor, resource, tenant, inner_context) do
-        Enum.map(grant.permissions || [], &to_permission_string/1)
-      else
-        []
-      end
-    end)
+    grant_permissions =
+      resource
+      |> AshGrant.Info.grants()
+      |> Enum.flat_map(fn grant ->
+        if predicate_true?(grant, actor, resource, tenant, inner_context) do
+          Enum.map(grant.permissions || [], &to_permission_string/1)
+        else
+          []
+        end
+      end)
+
+    # Compose with an explicit base resolver when the resource declared both
+    # `grants` and a `resolver` (persisted by `NormalizeGrants`): the grants
+    # provide static structural permissions, the base resolver dynamic/DB ones.
+    grant_permissions ++ base_resolver_permissions(actor, resource, context)
+  end
+
+  defp base_resolver_permissions(actor, resource, context) do
+    case Spark.Dsl.Extension.get_persisted(
+           resource,
+           AshGrant.Transformers.NormalizeGrants.base_resolver_key()
+         ) do
+      nil -> []
+      resolver when is_atom(resolver) -> resolver.resolve(actor, context)
+      resolver when is_function(resolver, 2) -> resolver.(actor, context)
+    end
   end
 
   defp predicate_true?(%{predicate: true}, _actor, _resource, _tenant, _context), do: true

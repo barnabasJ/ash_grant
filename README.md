@@ -1,24 +1,35 @@
 # AshGrant
 
-Permission-based authorization extension for [Ash Framework](https://ash-hq.org/).
+Permission-based authorization extension for
+[Ash Framework](https://ash-hq.org/).
 
 AshGrant connects three Ash-native concepts — **resources**, **actions**, and
-**`expr()` scopes** — through a permission string (`[!]resource:instance_id:action:scope[:field_group]`).
-Permissions resolve to native Ash filters and policy checks, with deny-wins semantics.
+**`expr()` scopes** — through a permission string
+(`[!]resource:instance_id:action:scope[:field_group]`). Permissions resolve to
+native Ash filters and policy checks, with deny-wins semantics.
 
 **Authorization:**
-- **Declarative `grants` DSL** — named grants pair an actor predicate (`expr(^actor(:role) == :admin)`) with a set of compile-time-verified permissions. The resolver is synthesized for you.
-- **Domain-level DSL** — shared resolver and scopes inherited by all resources in a domain
+
+- **Declarative `grants` DSL** — named grants pair an actor predicate
+  (`expr(^actor(:role) == :admin)`) with a set of compile-time-verified
+  permissions. The resolver is synthesized for you.
+- **Domain-level DSL** — shared resolver and scopes inherited by all resources
+  in a domain
 - **Scope DSL** with `expr()` — row-level filters, `^tenant()` support
-- **Argument-based scopes** with `resolve_argument` — multi-hop authorization via action arguments populated from the resource's own relationships, with lazy loading
+- **Argument-based scopes** with `resolve_argument` — multi-hop authorization
+  via action arguments populated from the resource's own relationships, with
+  lazy loading
 - **Field groups** — column-level read access with inheritance and masking
 - **Instance permissions** — per-record sharing with optional scope conditions
 - **Deny-wins evaluation** — deny rules always override allows
 
 **UI Integration:**
-- **`CanPerform` calculation** — per-record boolean for UI visibility (compiles to SQL), with DSL sugar (`can_perform_actions`, `can_perform`)
+
+- **`CanPerform` calculation** — per-record boolean for UI visibility (compiles
+  to SQL), with DSL sugar (`can_perform_actions`, `can_perform`)
 
 **Verification & Tooling:**
+
 - **`explain/4`** — trace why authorization succeeded or failed
 - **`Introspect`** — query actor permissions, available actions at runtime
 - **Policy testing** — DSL and YAML-based config tests, no database required
@@ -81,10 +92,15 @@ end
 ```
 
 **How it works:**
-1. Actor (`%{role: :editor, id: "user_123"}`) matches the `:editor` grant's predicate
-2. Each permission compiles to a string like `"post:*:update:own"` and references a scope by name
-3. Compile-time verifier checks that every permission's action and scope exist on the resource
-4. Scope `:own` adds filter `author_id == actor.id` to queries, Scope `:published` filters by status
+
+1. Actor (`%{role: :editor, id: "user_123"}`) matches the `:editor` grant's
+   predicate
+2. Each permission compiles to a string like `"post:*:update:own"` and
+   references a scope by name
+3. Compile-time verifier checks that every permission's action and scope exist
+   on the resource
+4. Scope `:own` adds filter `author_id == actor.id` to queries, Scope
+   `:published` filters by status
 
 ### 2. Use It
 
@@ -108,7 +124,11 @@ Post |> Ash.read!(actor: viewer)
 
 The `grants` DSL covers RBAC and most ABAC cases declaratively. For runtime
 instance-specific permissions (e.g. per-row sharing fetched from a database),
-use a `resolver` function instead — it's mutually exclusive with `grants`:
+add a `resolver` (function or module). It **composes with `grants`**: when a
+resource declares both, the synthesized resolver unions the grant-derived
+permission strings with the explicit resolver's strings before handing them to
+the evaluator. So declare static, structural permissions as `grants` and let the
+resolver supply the dynamic/DB-backed ones — you no longer have to choose one:
 
 ```elixir
 ash_grant do
@@ -122,17 +142,31 @@ end
 
 ## Guides
 
-- **[Getting Started](guides/getting-started.md)** — Module-based resolvers, explicit policies, domain-level DSL, resolver patterns
-- **[Permissions](guides/permissions.md)** — Permission format, wildcards, RBAC, instance permissions, instance_key, scope_through, deny-wins
-- **[Scopes](guides/scopes.md)** — Scope DSL, combination rules, multi-tenancy, relational scopes, business examples
-- **[Scope Naming Convention](guides/scope-naming-convention.md)** — Predicate naming, sentence test, RBAC/ABAC patterns, AND/OR composition
-- **[Argument-Based Scope](guides/argument-based-scope.md)** — Multi-hop authorization via action arguments + resource-local lazy loading, avoids DB-query fallback
-- **[Advanced Patterns](guides/advanced-patterns.md)** — Real-world recipes combining `resolve_argument` and `scope_through` (multi-hop writes, parent-shared children, both together)
-- **[Field-Level Permissions](guides/field-level-permissions.md)** — Field groups, whitelist/blacklist modes, inheritance, masking
-- **[Checks & Policies](guides/checks-and-policies.md)** — Check types, CanPerform calculations, DSL configuration, default_policies
-- **[Debugging & Introspection](guides/debugging-and-introspection.md)** — explain/4, permission introspection, identifier-based lookups, expression stringification
-- **[Policy Testing](guides/policy-testing.md)** — DSL and YAML tests, mix tasks, export/import
-- **[Migration Guide](guides/migration.md)** — Moving off deprecated `write:`, `scope_resolver`, and `owner_field`
+- **[Getting Started](guides/getting-started.md)** — Module-based resolvers,
+  explicit policies, domain-level DSL, resolver patterns
+- **[Permissions](guides/permissions.md)** — Permission format, wildcards, RBAC,
+  instance permissions, instance_key, scope_through, deny-wins
+- **[Scopes](guides/scopes.md)** — Scope DSL, combination rules, multi-tenancy,
+  relational scopes, business examples
+- **[Scope Naming Convention](guides/scope-naming-convention.md)** — Predicate
+  naming, sentence test, RBAC/ABAC patterns, AND/OR composition
+- **[Argument-Based Scope](guides/argument-based-scope.md)** — Multi-hop
+  authorization via action arguments + resource-local lazy loading, avoids
+  DB-query fallback
+- **[Advanced Patterns](guides/advanced-patterns.md)** — Real-world recipes
+  combining `resolve_argument` and `scope_through` (multi-hop writes,
+  parent-shared children, both together)
+- **[Field-Level Permissions](guides/field-level-permissions.md)** — Field
+  groups, whitelist/blacklist modes, inheritance, masking
+- **[Checks & Policies](guides/checks-and-policies.md)** — Check types,
+  CanPerform calculations, DSL configuration, default_policies
+- **[Debugging & Introspection](guides/debugging-and-introspection.md)** —
+  explain/4, permission introspection, identifier-based lookups, expression
+  stringification
+- **[Policy Testing](guides/policy-testing.md)** — DSL and YAML tests, mix
+  tasks, export/import
+- **[Migration Guide](guides/migration.md)** — Moving off deprecated `write:`,
+  `scope_resolver`, and `owner_field`
 
 ## Architecture
 
@@ -166,26 +200,36 @@ end
 
 ## Disclosure
 
-  I've been a developer for about six years. I became interested in Elixir, Phoenix, and Ash a couple of years ago, but only started actually building with
-  them about four months ago. This library was born out of my own needs, and honestly, my skills in this ecosystem aren't at the level where I'd normally
-  attempt building something like this.
+I've been a developer for about six years. I became interested in Elixir,
+Phoenix, and Ash a couple of years ago, but only started actually building with
+them about four months ago. This library was born out of my own needs, and
+honestly, my skills in this ecosystem aren't at the level where I'd normally
+attempt building something like this.
 
-  Most of AshGrant was developed through TDD with Claude Code—I described what I needed, Claude Code wrote the tests and implementation, and I reviewed the
-  results. I treated it like any third-party library: if the tests pass and the code looks reasonable, I use it. I haven't read every line of code in detail,
-  so I can't guarantee everything works perfectly.
+Most of AshGrant was developed through TDD with Claude Code—I described what I
+needed, Claude Code wrote the tests and implementation, and I reviewed the
+results. I treated it like any third-party library: if the tests pass and the
+code looks reasonable, I use it. I haven't read every line of code in detail, so
+I can't guarantee everything works perfectly.
 
-  I'm using this in production because I need it now, but please consider this more as a **proof of concept**—a proposal for how authorization could be handled
-   in Ash. I'm sharing this publicly in hopes that it can be a starting point. If others find it useful and want to contribute, we could build something better
-   together.
+I'm using this in production because I need it now, but please consider this
+more as a **proof of concept**—a proposal for how authorization could be handled
+in Ash. I'm sharing this publicly in hopes that it can be a starting point. If
+others find it useful and want to contribute, we could build something better
+together.
 
-  If you have suggestions or find issues, please feel free to open an issue or submit a PR—contributions are very welcome.
+If you have suggestions or find issues, please feel free to open an issue or
+submit a PR—contributions are very welcome.
 
-  What made this possible is how exceptionally well-documented Elixir and Ash are. The clear abstractions—DSLs, Domains, Resources, Extensions—gave me a
-  precise vocabulary to communicate my requirements to an LLM. These well-defined concepts provided both the courage to start and the foundation to actually
-  ship something I use in production.
+What made this possible is how exceptionally well-documented Elixir and Ash are.
+The clear abstractions—DSLs, Domains, Resources, Extensions—gave me a precise
+vocabulary to communicate my requirements to an LLM. These well-defined concepts
+provided both the courage to start and the foundation to actually ship something
+I use in production.
 
-  I'm deeply grateful to Zach for creating Ash Framework, the Ash Core Team, all the contributors, and the broader Elixir community. We have something special
-  here.
+I'm deeply grateful to Zach for creating Ash Framework, the Ash Core Team, all
+the contributors, and the broader Elixir community. We have something special
+here.
 
 ## License
 

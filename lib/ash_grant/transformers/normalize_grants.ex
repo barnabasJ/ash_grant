@@ -6,7 +6,13 @@ defmodule AshGrant.Transformers.NormalizeGrants do
 
   - Fills in `on:` with the current resource module when omitted on a
     permission declared inside a resource's own `ash_grant` block.
-  - Validates that `grants` and an explicit `resolver` are not both set.
+  - **Composes `grants` with an explicit `resolver`**: when a resource declares
+    both, the explicit resolver is persisted as the *base resolver*, and
+    `AshGrant.GrantsResolver` (wired in by `SynthesizeGrantsResolver`) unions its
+    grant-derived permission strings with the base resolver's strings at runtime.
+    So the declarative `grants` provide static, structural permissions while the
+    explicit resolver keeps supplying dynamic/DB-backed ones — both reach the
+    evaluator.
 
   Reference validation (that each permission's `on:`, `action:`, and `scope:`
   resolve to real things) is handled by
@@ -17,7 +23,15 @@ defmodule AshGrant.Transformers.NormalizeGrants do
   use Spark.Dsl.Transformer
 
   alias Spark.Dsl.Transformer
-  alias Spark.Error.DslError
+
+  # Persisted key under which an explicit `resolver` is stashed when a resource
+  # also declares `grants`, so `AshGrant.GrantsResolver` can union the two at
+  # runtime. Read at runtime via `Spark.Dsl.Extension.get_persisted/2`.
+  @base_resolver_key :ash_grant_base_resolver
+
+  @doc false
+  @spec base_resolver_key() :: atom()
+  def base_resolver_key, do: @base_resolver_key
 
   @impl true
   def after?(_), do: false
@@ -36,26 +50,20 @@ defmodule AshGrant.Transformers.NormalizeGrants do
         {:ok, dsl_state}
 
       _ ->
-        with :ok <- validate_not_both_resolver_and_grants(dsl_state, resource) do
-          inject_default_resource(dsl_state, resource, grants)
-        end
+        dsl_state
+        |> persist_base_resolver()
+        |> inject_default_resource(resource, grants)
     end
   end
 
-  defp validate_not_both_resolver_and_grants(dsl_state, resource) do
+  # When a resource declares BOTH `grants` and an explicit `resolver`, stash the
+  # explicit resolver as the base resolver. `SynthesizeGrantsResolver` then
+  # overwrites `:resolver` with `AshGrant.GrantsResolver`, which unions the
+  # grant-derived strings with this base resolver's strings.
+  defp persist_base_resolver(dsl_state) do
     case Transformer.get_option(dsl_state, [:ash_grant], :resolver) do
-      nil ->
-        :ok
-
-      _resolver ->
-        {:error,
-         DslError.exception(
-           module: resource,
-           path: [:ash_grant, :grants],
-           message:
-             "Cannot declare both `grants` and `resolver` on #{inspect(resource)}. " <>
-               "Use one or the other — grants synthesize a resolver automatically."
-         )}
+      nil -> dsl_state
+      resolver -> Transformer.persist(dsl_state, @base_resolver_key, resolver)
     end
   end
 
