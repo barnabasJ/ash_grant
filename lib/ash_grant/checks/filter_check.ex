@@ -241,22 +241,34 @@ defmodule AshGrant.FilterCheck do
         action_type
       )
 
-    # Get the instance key field (defaults to :id)
-    instance_key = AshGrant.Info.instance_key(resource_module)
+    # An unscoped RBAC grant (e.g. "pipeline:*:read") means "no row filter" — the
+    # default all-access scope. Short-circuit to `true` like the write check's
+    # `check_scope_access(nil) -> true`, so callers never need an `:all` scope.
+    if AshGrant.Evaluator.has_unscoped_access?(
+         permissions,
+         resource_name,
+         action_name,
+         action_type
+       ) do
+      true
+    else
+      # Get the instance key field (defaults to :id)
+      instance_key = AshGrant.Info.instance_key(resource_module)
 
-    # Get parent instance filters from scope_through entities
-    parent_filters =
-      build_parent_instance_filters(resource_module, permissions, action_name, action_type)
+      # Get parent instance filters from scope_through entities
+      parent_filters =
+        build_parent_instance_filters(resource_module, permissions, action_name, action_type)
 
-    # Build combined filter from RBAC scopes + instance IDs + parent filters
-    build_filter_with_instances(
-      scopes,
-      instance_ids,
-      instance_key,
-      parent_filters,
-      scope_resolver,
-      context
-    )
+      # Build combined filter from RBAC scopes + instance IDs + parent filters
+      build_filter_with_instances(
+        scopes,
+        instance_ids,
+        instance_key,
+        parent_filters,
+        scope_resolver,
+        context
+      )
+    end
   end
 
   defp action_type_from(%{type: type}), do: type

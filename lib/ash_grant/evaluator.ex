@@ -362,6 +362,40 @@ defmodule AshGrant.Evaluator do
   end
 
   @doc """
+  Returns `true` when the actor holds a matching, non-deny **RBAC** permission
+  (`instance_id == "*"`) that carries **no scope**.
+
+  An unscoped permission means "no row filter" — the default, all-access grant.
+  This mirrors the write check's `check_scope_access(nil) -> true`: where
+  `AshGrant.Check` already treats a scopeless matching permission as full
+  access, this lets `AshGrant.FilterCheck`/`CanPerform` do the same for reads.
+  Deny rules still win.
+  """
+  @spec has_unscoped_access?(
+          permissions :: term(),
+          resource :: String.t(),
+          action :: String.t(),
+          action_type :: atom() | nil
+        ) :: boolean()
+  def has_unscoped_access?(permissions, resource, action, action_type \\ nil) do
+    permissions = normalize_permissions(permissions)
+
+    has_deny =
+      Enum.any?(permissions, fn perm ->
+        Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
+      end)
+
+    if has_deny do
+      false
+    else
+      Enum.any?(permissions, fn perm ->
+        not Permission.deny?(perm) and is_nil(perm.scope) and perm.instance_id == "*" and
+          Permission.matches?(perm, resource, action, action_type)
+      end)
+    end
+  end
+
+  @doc """
   Gets the field group from the first matching permission.
 
   Returns the field_group string from the first matching allow permission.

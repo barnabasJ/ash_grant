@@ -121,22 +121,29 @@ defmodule AshGrant.Calculation.CanPerform do
       instance_key = AshGrant.Info.instance_key(resource)
 
       permissions = resolve_permissions(resolver, actor, resolver_context)
-      scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action)
 
-      instance_ids =
-        AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action)
+      # An unscoped RBAC grant means "no row filter" (the default all-access
+      # scope) — mirror FilterCheck and the write check by short-circuiting.
+      if AshGrant.Evaluator.has_unscoped_access?(permissions, resource_name, action) do
+        expr(true)
+      else
+        scopes = AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action)
 
-      parent_filters =
-        build_parent_instance_filters(resource, permissions, action)
+        instance_ids =
+          AshGrant.Evaluator.get_matching_instance_ids(permissions, resource_name, action)
 
-      build_expression(
-        scopes,
-        instance_ids,
-        instance_key,
-        parent_filters,
-        scope_resolver,
-        resource
-      )
+        parent_filters =
+          build_parent_instance_filters(resource, permissions, action)
+
+        build_expression(
+          scopes,
+          instance_ids,
+          instance_key,
+          parent_filters,
+          scope_resolver,
+          resource
+        )
+      end
     end
   end
 
