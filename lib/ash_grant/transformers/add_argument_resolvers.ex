@@ -18,8 +18,6 @@ defmodule AshGrant.Transformers.AddArgumentResolvers do
 
   use Spark.Dsl.Transformer
 
-  require Ash.Expr
-
   alias Spark.Dsl.Transformer
   alias AshGrant.ArgumentAnalyzer
 

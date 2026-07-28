@@ -842,9 +842,6 @@ defmodule AshGrant.Check do
   # Replace exists() nodes with true for in-memory evaluation.
   # Ash.Expr.eval cannot resolve exists() without DB queries, causing a crash:
   # `nil.persisted(:relationships_by_name)` (ArgumentError)
-  defp simplify_exists_for_eval(true), do: true
-  defp simplify_exists_for_eval(false), do: false
-
   defp simplify_exists_for_eval(filter) do
     Ash.Filter.map(filter, fn
       %Ash.Query.Exists{} -> true

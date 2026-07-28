@@ -36,8 +36,6 @@ defmodule AshGrant.Info do
 
   use Spark.InfoGenerator, extension: AshGrant, sections: [:ash_grant]
 
-  require Ash.Expr
-
   @doc """
   Gets the permission resolver for a resource.
 

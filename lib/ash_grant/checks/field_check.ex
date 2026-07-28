@@ -90,8 +90,6 @@ defmodule AshGrant.FieldCheck do
   defp action_type_from(_), do: nil
 
   # Check if any of the actor's field groups equals or inherits from the required group
-  defp field_group_grants_access?(_resource, [], _required), do: false
-
   defp field_group_grants_access?(resource, actor_groups, required) do
     Enum.any?(actor_groups, fn group_name ->
       group_atom =
