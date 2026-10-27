@@ -116,6 +116,13 @@ defmodule AshGrant.InstanceScopeTest do
     end
   end
 
+  describe "Evaluator.get_matching_instance_ids/4 deny precedence" do
+    test "resource-wide deny defeats an instance allow" do
+      permissions = ["doc:doc_123:update:", "!doc:*:update:"]
+      assert Evaluator.get_matching_instance_ids(permissions, "doc", "update") == []
+    end
+  end
+
   describe "Evaluator.get_instance_scope/3" do
     test "returns scope from instance permission" do
       permissions = ["doc:doc_123:update:draft"]

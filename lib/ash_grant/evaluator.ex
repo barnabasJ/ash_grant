@@ -228,9 +228,7 @@ defmodule AshGrant.Evaluator do
         Permission.deny?(perm) and Permission.matches_instance?(perm, instance_id, action)
       end)
 
-    if has_deny do
-      nil
-    else
+    if !has_deny do
       # Find first matching allow permission and return its scope
       permissions
       |> Enum.find(fn perm ->
@@ -310,9 +308,7 @@ defmodule AshGrant.Evaluator do
         Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
       end)
 
-    if has_deny do
-      nil
-    else
+    if !has_deny do
       # Find first matching allow permission and return its scope
       permissions
       |> Enum.find(fn perm ->
@@ -396,9 +392,7 @@ defmodule AshGrant.Evaluator do
         Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
       end)
 
-    if has_deny do
-      nil
-    else
+    if !has_deny do
       permissions
       |> Enum.find(fn perm ->
         not Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
@@ -497,28 +491,36 @@ defmodule AshGrant.Evaluator do
   def get_matching_instance_ids(permissions, resource, action, action_type \\ nil) do
     permissions = normalize_permissions(permissions)
 
-    # Find all instance permissions that match resource and action
-    instance_perms =
-      permissions
-      |> Enum.filter(fn perm ->
-        Permission.instance_permission?(perm) and
-          Permission.matches_resource?(perm.resource, resource) and
-          Permission.matches_action?(perm.action, action, action_type)
-      end)
-
-    # Get denied instance IDs
-    denied_ids =
-      instance_perms
-      |> Enum.filter(&Permission.deny?/1)
+    # A resource-wide deny also defeats a narrower instance allow.
+    if Enum.any?(permissions, fn perm ->
+         Permission.deny?(perm) and Permission.matches?(perm, resource, action, action_type)
+       end) do
+      []
+    else
+      matching_instance_permissions(permissions, resource, action, action_type)
+      |> allowed_instance_permissions()
       |> Enum.map(& &1.instance_id)
-      |> MapSet.new()
+      |> Enum.uniq()
+    end
+  end
 
-    # Get allowed instance IDs (excluding denied ones)
-    instance_perms
-    |> Enum.reject(&Permission.deny?/1)
-    |> Enum.map(& &1.instance_id)
-    |> Enum.reject(&MapSet.member?(denied_ids, &1))
-    |> Enum.uniq()
+  defp matching_instance_permissions(permissions, resource, action, action_type) do
+    Enum.filter(permissions, fn perm ->
+      Permission.instance_permission?(perm) and
+        Permission.matches_resource?(perm.resource, resource) and
+        Permission.matches_action?(perm.action, action, action_type)
+    end)
+  end
+
+  defp allowed_instance_permissions(permissions) do
+    denied_ids =
+      permissions
+      |> Enum.filter(&Permission.deny?/1)
+      |> MapSet.new(& &1.instance_id)
+
+    Enum.reject(permissions, fn perm ->
+      Permission.deny?(perm) or MapSet.member?(denied_ids, perm.instance_id)
+    end)
   end
 
   @doc """

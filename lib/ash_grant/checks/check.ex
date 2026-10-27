@@ -166,6 +166,8 @@ defmodule AshGrant.Check do
   - `AshGrant.Info` - DSL introspection helpers
   """
 
+  use Ash.Policy.SimpleCheck
+
   require Ash.Expr
   require Ash.Query
 
@@ -188,8 +190,6 @@ defmodule AshGrant.Check do
   end
 
   # Ash.Policy.Check behaviour implementation
-
-  use Ash.Policy.SimpleCheck
 
   @impl true
   def describe(opts) do
@@ -264,27 +264,47 @@ defmodule AshGrant.Check do
     end
   end
 
+  @impl Ash.Policy.Check
+  @spec requires_original_data?(authorizer :: map(), opts :: keyword()) :: boolean()
+  def requires_original_data?(
+        %{actor: actor, resource: resource, action: action} = authorizer,
+        opts
+      )
+      when not is_nil(actor) and action.type in [:update, :destroy] do
+    resolver = AshGrant.Info.resolver(resource)
+
+    permissions =
+      resolve_permissions(resolver, actor, build_context(actor, resource, action, authorizer))
+
+    resource_name = resource_name(resource, opts)
+    {action_name, action_type} = action_identity(action, opts)
+
+    target_rule? =
+      permissions
+      |> then(&AshGrant.Evaluator.combine([&1]))
+      |> Enum.any?(fn permission ->
+        AshGrant.Permission.instance_permission?(permission) and
+          AshGrant.Permission.matches_resource?(permission.resource, resource_name) and
+          AshGrant.Permission.matches_action?(permission.action, action_name, action_type)
+      end)
+
+    parent_rule? =
+      Enum.any?(AshGrant.Info.scope_throughs(resource), fn scope_through ->
+        (scope_through.actions == nil or
+           action_type_atom(action_name, action_type) in scope_through.actions) and
+          parent_permission?(resource, permissions, scope_through, action_name, action_type)
+      end)
+
+    target_rule? or parent_rule?
+  end
+
+  def requires_original_data?(_authorizer, _opts), do: false
+
   defp do_match?(actor, resource_module, action, authorizer, opts) do
-    # Get configuration from DSL
     resolver = AshGrant.Info.resolver(resource_module)
     scope_resolver = AshGrant.Info.scope_resolver(resource_module)
-    configured_name = AshGrant.Info.resource_name(resource_module)
-
-    # Note: Ash passes :resource as the module, we want a string name
-    # Only use opts[:resource] if it's a string (user override)
-    resource_name =
-      case Keyword.get(opts, :resource) do
-        nil -> configured_name
-        name when is_binary(name) -> name
-        _module -> configured_name
-      end
-
-    # When action is overridden via opts, don't infer action_type
-    {action_name, action_type} =
-      case Keyword.get(opts, :action) do
-        nil -> {to_string(action.name), action_type_from(action)}
-        override -> {override, nil}
-      end
+    resource_name = resource_name(resource_module, opts)
+    {action_name, action_type} = action_identity(action, opts)
 
     # Build context
     context = build_context(actor, resource_module, action, authorizer)
@@ -292,24 +312,118 @@ defmodule AshGrant.Check do
     # Resolve permissions
     permissions = resolve_permissions(resolver, actor, context)
 
-    # Check access using evaluator
-    case AshGrant.Evaluator.has_access?(permissions, resource_name, action_name, action_type) do
-      false ->
-        # RBAC check failed — try scope_through (parent instance permissions)
-        check_scope_through_write(
-          resource_module,
-          permissions,
-          action_name,
-          action_type,
-          authorizer
-        )
+    # A denied child must not be reauthorized by a parent grant.
+    target_id = target_instance_id(authorizer, resource_module)
 
-      true ->
-        # Has permission, now check scope
-        scope =
-          AshGrant.Evaluator.get_scope(permissions, resource_name, action_name, action_type)
+    if target_denied?(permissions, resource_name, action_name, action_type, target_id) do
+      false
+    else
+      case AshGrant.Evaluator.has_access?(permissions, resource_name, action_name, action_type) do
+        true ->
+          scope =
+            AshGrant.Evaluator.get_scope(permissions, resource_name, action_name, action_type)
 
-        check_scope_access(scope, scope_resolver, context, authorizer, opts)
+          check_scope_access(scope, scope_resolver, context, authorizer, opts)
+
+        false ->
+          instance_scopes =
+            if target_id,
+              do:
+                instance_scopes(permissions, resource_name, target_id, action_name, action_type),
+              else: []
+
+          if instance_scopes == [] do
+            check_scope_through_write(
+              resource_module,
+              permissions,
+              action_name,
+              action_type,
+              authorizer
+            )
+          else
+            Enum.any?(instance_scopes, fn scope ->
+              check_scope_access(scope, scope_resolver, context, authorizer, opts)
+            end)
+          end
+      end
+    end
+  end
+
+  defp target_instance_id(
+         %{changeset: %Ash.Changeset{action_type: :create} = changeset},
+         resource
+       ) do
+    case Ash.Changeset.get_attribute(changeset, AshGrant.Info.instance_key(resource)) do
+      nil -> nil
+      id -> to_string(id)
+    end
+  end
+
+  defp target_instance_id(authorizer, resource) do
+    case get_target_record(authorizer) do
+      nil ->
+        nil
+
+      record ->
+        case Map.get(record, AshGrant.Info.instance_key(resource)) do
+          nil -> nil
+          id -> to_string(id)
+        end
+    end
+  end
+
+  defp target_denied?(permissions, resource, action, action_type, instance_id) do
+    permissions
+    |> then(&AshGrant.Evaluator.combine([&1]))
+    |> Enum.any?(fn permission ->
+      AshGrant.Permission.deny?(permission) and
+        AshGrant.Permission.matches_resource?(permission.resource, resource) and
+        AshGrant.Permission.matches_action?(permission.action, action, action_type) and
+        (permission.instance_id == "*" or is_nil(instance_id) or
+           permission.instance_id == instance_id)
+    end)
+  end
+
+  defp parent_permission?(resource, permissions, scope_through, action, action_type) do
+    parent = resolve_parent_resource(resource, scope_through)
+    parent_name = AshGrant.Info.resource_name(parent)
+
+    AshGrant.Evaluator.get_matching_instance_ids(permissions, parent_name, action, action_type) !=
+      []
+  end
+
+  defp instance_scopes(permissions, resource, instance_id, action, action_type) do
+    allowed_ids =
+      AshGrant.Evaluator.get_matching_instance_ids(permissions, resource, action, action_type)
+
+    if instance_id in allowed_ids do
+      permissions
+      |> then(&AshGrant.Evaluator.combine([&1]))
+      |> Enum.filter(fn permission ->
+        AshGrant.Permission.instance_permission?(permission) and
+          not AshGrant.Permission.deny?(permission) and
+          AshGrant.Permission.matches_resource?(permission.resource, resource) and
+          AshGrant.Permission.matches_action?(permission.action, action, action_type) and
+          permission.instance_id == instance_id
+      end)
+      |> Enum.map(& &1.scope)
+      |> Enum.uniq()
+    else
+      []
+    end
+  end
+
+  defp resource_name(resource, opts) do
+    case Keyword.get(opts, :resource) do
+      name when is_binary(name) -> name
+      _ -> AshGrant.Info.resource_name(resource)
+    end
+  end
+
+  defp action_identity(action, opts) do
+    case Keyword.get(opts, :action) do
+      nil -> {to_string(action.name), action_type_from(action)}
+      override -> {override, nil}
     end
   end
 
@@ -888,7 +1002,7 @@ defmodule AshGrant.Check do
       match = Regex.run(~r/^(\w+)\s+in\s+\[(.+)\]$/, filter_str) ->
         [_, field_name, list_content] = match
         ids = Regex.scan(~r/"([^"]+)"/, list_content) |> Enum.map(fn [_, id] -> id end)
-        if ids != [], do: {String.to_existing_atom(field_name), ids}, else: nil
+        if ids != [], do: {String.to_existing_atom(field_name), ids}
 
       # Complex Ash.Query format with :in
       String.contains?(filter_str, ":in") and String.contains?(filter_str, "[\"") ->
@@ -912,7 +1026,7 @@ defmodule AshGrant.Check do
       {[_, field_name], [full_match | _]} ->
         # Parse all IDs from the list
         ids = Regex.scan(~r/"([^"]+)"/, full_match) |> Enum.map(fn [_, id] -> id end)
-        if ids != [], do: {String.to_existing_atom(field_name), ids}, else: nil
+        if ids != [], do: {String.to_existing_atom(field_name), ids}
 
       _ ->
         nil
@@ -940,11 +1054,11 @@ defmodule AshGrant.Check do
   defp check_tenant_match(record, tenant) do
     record_tenant = Map.get(record, :tenant_id)
 
-    if record_tenant != nil do
-      to_string(record_tenant) == to_string(tenant)
-    else
+    if record_tenant == nil do
       # No tenant_id on record, assume it's OK
       true
+    else
+      to_string(record_tenant) == to_string(tenant)
     end
   end
 

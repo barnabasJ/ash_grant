@@ -228,36 +228,60 @@ defmodule AshGrant.FilterCheck do
     # Resolve permissions
     permissions = resolve_permissions(resolver, actor, context)
 
-    # Get RBAC scopes (instance_id = "*")
-    scopes =
-      AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action_name, action_type)
+    denied = matching_target_denies(permissions, resource_name, action_name, action_type)
 
-    # Get instance permission IDs
-    instance_ids =
-      AshGrant.Evaluator.get_matching_instance_ids(
-        permissions,
-        resource_name,
-        action_name,
-        action_type
-      )
+    if Enum.any?(denied, &(&1.instance_id == "*")) do
+      false
+    else
+      scopes =
+        AshGrant.Evaluator.get_all_scopes(permissions, resource_name, action_name, action_type)
 
-    # Get the instance key field (defaults to :id)
-    instance_key = AshGrant.Info.instance_key(resource_module)
+      instance_ids =
+        AshGrant.Evaluator.get_matching_instance_ids(
+          permissions,
+          resource_name,
+          action_name,
+          action_type
+        )
 
-    # Get parent instance filters from scope_through entities
-    parent_filters =
-      build_parent_instance_filters(resource_module, permissions, action_name, action_type)
+      instance_key = AshGrant.Info.instance_key(resource_module)
 
-    # Build combined filter from RBAC scopes + instance IDs + parent filters
-    build_filter_with_instances(
-      scopes,
-      instance_ids,
-      instance_key,
-      parent_filters,
-      scope_resolver,
-      context
-    )
+      parent_filters =
+        build_parent_instance_filters(resource_module, permissions, action_name, action_type)
+
+      filter =
+        build_filter_with_instances(
+          scopes,
+          instance_ids,
+          instance_key,
+          parent_filters,
+          scope_resolver,
+          context
+        )
+
+      denied_ids = denied |> Enum.map(& &1.instance_id) |> Enum.uniq()
+      exclude_denied_instances(filter, instance_key, denied_ids)
+    end
   end
+
+  defp matching_target_denies(permissions, resource, action, action_type) do
+    permissions
+    |> then(&AshGrant.Evaluator.combine([&1]))
+    |> Enum.filter(fn permission ->
+      AshGrant.Permission.deny?(permission) and
+        AshGrant.Permission.matches_resource?(permission.resource, resource) and
+        AshGrant.Permission.matches_action?(permission.action, action, action_type)
+    end)
+  end
+
+  defp exclude_denied_instances(filter, _instance_key, []), do: filter
+  defp exclude_denied_instances(false, _instance_key, _denied_ids), do: false
+
+  defp exclude_denied_instances(true, instance_key, denied_ids),
+    do: Ash.Expr.expr(^ref(instance_key) not in ^denied_ids)
+
+  defp exclude_denied_instances(filter, instance_key, denied_ids),
+    do: Ash.Expr.expr(^filter and ^ref(instance_key) not in ^denied_ids)
 
   defp action_type_from(%{type: type}), do: type
   defp action_type_from(_), do: nil
@@ -331,14 +355,16 @@ defmodule AshGrant.FilterCheck do
           action_type
         )
 
-      if parent_ids != [] do
+      if parent_ids == [] do
+        []
+        # Simple case: parent's instance_key matches the FK destination (usually :id)
+      else
         relationship = Ash.Resource.Info.relationship(resource_module, scope_through.relationship)
         fk_field = relationship.source_attribute
         parent_dest_field = relationship.destination_attribute
         parent_instance_key = AshGrant.Info.instance_key(parent_resource)
 
         if parent_instance_key == parent_dest_field do
-          # Simple case: parent's instance_key matches the FK destination (usually :id)
           [Ash.Expr.expr(^ref(fk_field) in ^parent_ids)]
         else
           # Complex case: parent's instance_key differs from PK, need a join
@@ -348,8 +374,6 @@ defmodule AshGrant.FilterCheck do
             )
           ]
         end
-      else
-        []
       end
     end)
   end
